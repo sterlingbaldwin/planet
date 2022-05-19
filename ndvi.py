@@ -17,9 +17,9 @@ class image_band(Enum):
 # set the default threshold to a small non-zero value
 DEFAULT_THRESHOLD = 0.1
 DESCRIPTION = "find the ndvi values from a GEOTIFF image, optionally filtering for a given threshold value"
+    
 
-
-def find_ndvi(input_path: str, output_path: str, threshold: float):
+def find_ndvi(input_path: str, output_path: str, threshold=DEFAULT_THRESHOLD):
     # I like to put heavy inputs after the argument parsing is done,
     # that way if a user does "-h" they dont have to wait for 
     # modules to load
@@ -28,30 +28,31 @@ def find_ndvi(input_path: str, output_path: str, threshold: float):
     
     # load the dataset, and pull out the two bands we care about
     dataset = gdal.Open(input_path, gdal.GA_ReadOnly)
+
+    # extract the values we care about from the dataset
     nir = dataset.GetRasterBand(image_band.nir.value).ReadAsArray()
     r   = dataset.GetRasterBand(image_band.red.value).ReadAsArray()
 
-    # find the ndvi values for the whole dataset, replacing
+    # We need to find the ndvi values for the whole dataset, replacing
     # nans with 0s. This will result in some divide by 0s
     # so lets turn off that warning since it doesnt give
     # us any meaningful information
     np.seterr(invalid='ignore')
     ndvi = np.nan_to_num((nir - r)/(nir + r), nan=0)
 
-    # apply our threshold
-    if(threshold != DEFAULT_THRESHOLD):
-        ndvi[ndvi < threshold] = 0
-    ndvi[ndvi > threshold] = 255
+    # apply our threshold and set the detected values
+    ndvi[ndvi < threshold] = 0
+    ndvi[ndvi >= threshold] = 255
     
     rows, cols = ndvi.shape
     driver = gdal.GetDriverByName("GTiff")
     outdata = driver.Create(output_path, cols, rows, 1, gdal.GDT_UInt16)
+    
     outdata.SetGeoTransform(dataset.GetGeoTransform())
     outdata.SetProjection(dataset.GetProjection())
     outdata.GetRasterBand(1).WriteArray(ndvi)
     outdata.FlushCache()
-
-    # TODO: figure out how to warp the projection correctly
+    return
 
 
 def main():
@@ -82,9 +83,11 @@ def main():
         print(f"Output file {output_path} already exists, overwrite? y/[n]")
         if(input() not in ['y', 'Y']):
             return -1
-        # remove the previous output
+        # remove the previous output file
         output_path.unlink()
+
     find_ndvi(str(input_path), str(output_path), args.threshold)
+    return 0
 
 
 if __name__ == "__main__":
